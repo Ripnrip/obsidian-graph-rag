@@ -1,0 +1,10 @@
+{
+	"id": "graph-rag",
+	"name": "Graph RAG",
+	"version": "1.0.0",
+	"minAppVersion": "1.0.0",
+	"description": "Interactive GPU-accelerated graph visualization with Graph RAG — ask questions about your vault using knowledge graph-enhanced retrieval.",
+	"author": "Ripnrip",
+	"authorUrl": "https://github.com/Ripnrip",
+	"isDesktopOnly": false
+}
