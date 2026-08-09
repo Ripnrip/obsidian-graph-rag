@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Graph RAG — Mock Demo</title>
+<script src="./d3.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --border: #30363d;
+    --text-normal: #e6edf3;
+    --text-muted: #8b949e;
+    --text-faint: #484f58;
+    --accent: #7c8de8;
+    --accent-dim: rgba(124,141,232,0.15);
+    --node-default: #738cd9;
+    --node-vector: #f24b80;
+    --node-graph: #f0b429;
+    --link-default: rgba(100,120,160,0.25);
+  }
+
+  html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    background: var(--bg-primary);
+    color: var(--text-normal);
+    overflow: hidden;
+  }
+
+  /* ── App shell ── */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  /* ── Top bar ── */
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #topbar .logo {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+  #topbar .subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  #topbar .badge {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    padding: 2px 10px;
+    border-radius: 12px;
+  }
+
+  /* ── Main layout ── */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Graph panel ── */
+  #graph-panel {
+    flex: 1.4;
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid var(--border);
+    min-width: 0;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .panel-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-normal);
+  }
+  .status-pill {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    border-radius: 10px;
+    padding: 2px 10px;
+  }
+
+  #graph-canvas {
+    flex: 1;
+    position: relative;
+    background: var(--bg-primary);
+    overflow: hidden;
+  }
+  #graph-canvas svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* D3 graph elements */
+  .link {
+    stroke: var(--link-default);
+    stroke-width: 1px;
+    fill: none;
+  }
+  .link.highlighted {
+    stroke: rgba(240,180,41,0.6);
+    stroke-width: 1.5px;
+  }
+  .node circle {
+    cursor: pointer;
+    transition: r 0.2s;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,0.8));
+  }
+  .node circle:hover { filter: drop-shadow(0 0 8px currentColor); }
+  .node.vector circle { fill: var(--node-vector); }
+  .node.graph-hit circle { fill: var(--node-graph); }
+  .node.default circle { fill: var(--node-default); }
+  .node.dimmed circle { fill: #334; opacity: 0.35; }
+  .node text {
+    font-size: 10px;
+    fill: var(--text-muted);
+    pointer-events: none;
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+
+  /* tooltip */
+  #tooltip {
+    position: absolute;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text-normal);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    max-width: 200px;
+    z-index: 99;
+  }
+  #tooltip.visible { opacity: 1; }
+
+  /* legend */
+  #legend {
+    position: absolute;
+    bottom: 48px;
+    left: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* graph controls */
+  #graph-controls {
+    display: flex;
+    gap: 6px;
+    padding: 7px 12px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .ctrl-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ctrl-btn:hover {
+    background: #2d333b;
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Chat panel ── */
+  #chat-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  #chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #chat-messages::-webkit-scrollbar { width: 5px; }
+  #chat-messages::-webkit-scrollbar-track { background: transparent; }
+  #chat-messages::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+
+  .msg {
+    padding: 10px 14px;
+    border-radius: 10px;
+    max-width: 92%;
+    animation: fadeUp 0.25s ease;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 5px;
+    opacity: 0.65;
+  }
+  .msg-content { font-size: 13px; line-height: 1.6; word-wrap: break-word; }
+  .msg-content code {
+    background: var(--bg-tertiary);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+  }
+  .msg-content strong { color: #a5c4f5; }
+  .msg-content em { color: #b8d4a8; }
+
+  .msg.user {
+    background: var(--accent);
+    color: #fff;
+    align-self: flex-end;
+    border-bottom-right-radius: 3px;
+  }
+  .msg.user .msg-label { color: rgba(255,255,255,0.7); }
+
+  .msg.assistant {
+    background: var(--bg-secondary);
+    color: var(--text-normal);
+    align-self: flex-start;
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 3px;
+  }
+
+  .msg.system {
+    background: rgba(240,180,41,0.08);
+    border: 1px solid rgba(240,180,41,0.2);
+    color: var(--text-muted);
+    font-size: 12px;
+    align-self: center;
+    text-align: center;
+    border-radius: 8px;
+  }
+
+  /* sources chip */
+  .sources {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .source-chip {
+    font-size: 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .source-chip:hover { border-color: var(--accent); }
+
+  /* loading dots */
+  .loading-dots::after {
+    content: "";
+    animation: dots 1.4s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0%, 20% { content: ""; }
+    40% { content: "."; }
+    60% { content: ".."; }
+    80%, 100% { content: "..."; }
+  }
+
+  /* input row */
+  #input-row {
+    display: flex;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+  #chat-input {
+    flex: 1;
+    padding: 9px 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-normal);
+    font-size: 13px;
+    font-family: inherit;
+    resize: none;
+    transition: border-color 0.15s;
+  }
+  #chat-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  #chat-input::placeholder { color: var(--text-faint); }
+  #send-btn {
+    padding: 9px 20px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  #send-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+  #send-btn:active { transform: translateY(0); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <div class="logo">⎇ Graph RAG</div>
+    <div class="subtitle">Obsidian Knowledge Graph + Semantic Search</div>
+    <div class="badge" id="vault-badge">42 notes · 87 connections</div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+
+    <!-- Graph panel -->
+    <div id="graph-panel">
+      <div class="panel-header">
+        <h3>🌐 Knowledge Graph</h3>
+        <span class="status-pill" id="graph-status">42 notes · 87 connections</span>
+      </div>
+      <div id="graph-canvas">
+        <div id="tooltip"></div>
+        <div id="legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background:var(--node-default)"></div>Note
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:var(--node-vector)"></div>Vector hit
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:var(--node-graph)"></div>Graph traversal
+          </div>
+        </div>
+      </div>
+      <div id="graph-controls">
+        <button class="ctrl-btn" id="fit-btn">Fit View</button>
+        <button class="ctrl-btn" id="reset-btn">Reset Highlights</button>
+        <button class="ctrl-btn" id="demo-query-btn">▶ Demo Query</button>
+      </div>
+    </div>
+
+    <!-- Chat panel -->
+    <div id="chat-panel">
+      <div class="panel-header">
+        <h3>💬 Graph RAG Chat</h3>
+        <span class="status-pill">Mock Demo</span>
+      </div>
+      <div id="chat-messages"></div>
+      <div id="input-row">
+        <textarea id="chat-input" rows="2" placeholder="Ask about your notes..."></textarea>
+        <button id="send-btn">Send</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   MOCK DATA — simulated Obsidian vault
+═══════════════════════════════════════════════════ */
+const MOCK_NODES = [
+  // Core topics (high connectivity)
+  { id:  0, name: "Machine Learning",      tags: ["ai","ml"],          size: 14 },
+  { id:  1, name: "Neural Networks",       tags: ["ai","deep-learning"],size: 13 },
+  { id:  2, name: "Knowledge Graphs",      tags: ["ai","graphs"],       size: 13 },
+  { id:  3, name: "Obsidian Workflow",     tags: ["pkm","tools"],       size: 12 },
+  { id:  4, name: "RAG Systems",           tags: ["ai","retrieval"],    size: 12 },
+
+  // Sub-topics
+  { id:  5, name: "Transformers",          tags: ["deep-learning"],     size: 11 },
+  { id:  6, name: "Vector Databases",      tags: ["ai","databases"],    size: 10 },
+  { id:  7, name: "Graph Algorithms",      tags: ["graphs","cs"],       size: 10 },
+  { id:  8, name: "Embeddings",            tags: ["ai","nlp"],          size: 10 },
+  { id:  9, name: "Zettelkasten Method",   tags: ["pkm"],               size: 9  },
+  { id: 10, name: "Attention Mechanism",   tags: ["deep-learning"],     size: 9  },
+  { id: 11, name: "BFS & DFS",             tags: ["graphs","cs"],       size: 8  },
+  { id: 12, name: "Semantic Search",       tags: ["nlp","retrieval"],   size: 9  },
+  { id: 13, name: "Note-Taking Systems",   tags: ["pkm"],               size: 8  },
+  { id: 14, name: "OpenAI API",            tags: ["ai","tools"],        size: 9  },
+
+  // Leaf notes
+  { id: 15, name: "GPT-4 Notes",           tags: ["ai"],                size: 7  },
+  { id: 16, name: "FAISS Index",           tags: ["databases"],         size: 7  },
+  { id: 17, name: "Cosine Similarity",     tags: ["math","nlp"],        size: 6  },
+  { id: 18, name: "PageRank",              tags: ["graphs"],            size: 7  },
+  { id: 19, name: "Spaced Repetition",     tags: ["learning","pkm"],    size: 6  },
+  { id: 20, name: "LLM Fine-tuning",       tags: ["ai","deep-learning"],size: 7  },
+  { id: 21, name: "Markdown Tips",         tags: ["tools"],             size: 5  },
+  { id: 22, name: "Python Snippets",       tags: ["coding"],            size: 6  },
+  { id: 23, name: "Research Papers Log",  tags: ["research"],          size: 7  },
+  { id: 24, name: "Backlinks Strategy",    tags: ["pkm"],               size: 6  },
+  { id: 25, name: "BERT Model",            tags: ["deep-learning"],     size: 7  },
+  { id: 26, name: "Pinecone Setup",        tags: ["databases","tools"], size: 6  },
+  { id: 27, name: "Graph Neural Nets",     tags: ["ai","graphs"],       size: 8  },
+  { id: 28, name: "Second Brain",          tags: ["pkm"],               size: 7  },
+  { id: 29, name: "Retrieval Methods",     tags: ["retrieval"],         size: 7  },
+  { id: 30, name: "Tokenization",          tags: ["nlp"],               size: 6  },
+  { id: 31, name: "Reading Notes",         tags: ["research"],          size: 5  },
+  { id: 32, name: "API Keys Management",   tags: ["tools"],             size: 5  },
+  { id: 33, name: "Hugging Face",          tags: ["ai","tools"],        size: 7  },
+  { id: 34, name: "Knowledge Base Setup",  tags: ["pkm","tools"],       size: 6  },
+  { id: 35, name: "Matrix Factorization",  tags: ["math","ml"],         size: 6  },
+  { id: 36, name: "Hypothesis Testing",    tags: ["math","research"],   size: 5  },
+  { id: 37, name: "Data Preprocessing",    tags: ["ml","coding"],       size: 6  },
+  { id: 38, name: "Recall Techniques",     tags: ["learning"],          size: 5  },
+  { id: 39, name: "Wikilinks Guide",       tags: ["tools","pkm"],       size: 5  },
+  { id: 40, name: "Prompt Engineering",    tags: ["ai"],                size: 8  },
+  { id: 41, name: "Chunking Strategies",   tags: ["retrieval","nlp"],   size: 6  },
+];
+
+const MOCK_LINKS = [
+  [0,1],[0,2],[0,4],[0,5],[0,8],[0,20],[0,35],[0,37],
+  [1,5],[1,10],[1,25],[1,20],[1,27],
+  [2,4],[2,7],[2,11],[2,18],[2,27],
+  [3,9],[3,13],[3,21],[3,24],[3,28],[3,34],[3,39],
+  [4,6],[4,8],[4,12],[4,29],[4,41],
+  [5,10],[5,25],[5,30],
+  [6,16],[6,26],
+  [7,11],[7,18],
+  [8,12],[8,17],[8,41],
+  [9,13],[9,19],[9,24],[9,28],
+  [10,25],[10,30],
+  [12,17],[12,29],[12,41],
+  [13,24],[13,28],[13,38],
+  [14,15],[14,26],[14,33],[14,40],
+  [15,40],[15,20],
+  [16,26],[16,35],
+  [18,7],
+  [19,38],
+  [20,37],
+  [21,39],
+  [22,37],[22,16],
+  [23,31],[23,36],
+  [24,34],[24,39],
+  [25,33],[25,30],
+  [27,7],[27,18],
+  [28,34],
+  [29,41],
+  [33,40],
+  [35,36],
+  [40,4],[40,41],
+];
+
+/* ═══════════════════════════════════════════════════
+   D3 FORCE GRAPH
+═══════════════════════════════════════════════════ */
+const canvas  = document.getElementById("graph-canvas");
+const width   = () => canvas.clientWidth;
+const height  = () => canvas.clientHeight;
+
+const svg = d3.select("#graph-canvas").append("svg")
+  .attr("width","100%").attr("height","100%");
+
+// Zoom layer
+const g = svg.append("g");
+const zoom = d3.zoom().scaleExtent([0.1, 8]).on("zoom", e => g.attr("transform", e.transform));
+svg.call(zoom);
+
+// Build data
+const nodes = MOCK_NODES.map(d => ({ ...d }));
+const links = MOCK_LINKS.map(([s,t]) => ({ source: s, target: t }));
+
+// Simulation
+const sim = d3.forceSimulation(nodes)
+  .force("link",   d3.forceLink(links).id(d=>d.id).distance(55).strength(0.6))
+  .force("charge", d3.forceManyBody().strength(-120))
+  .force("center", d3.forceCenter(0, 0))
+  .force("collision", d3.forceCollide(d => d.size + 4))
+  .alphaDecay(0.03);
+
+// Draw links
+const linkSel = g.append("g").selectAll("line")
+  .data(links).join("line").attr("class","link");
+
+// Draw nodes
+const nodeSel = g.append("g").selectAll("g.node")
+  .data(nodes).join("g")
+  .attr("class","node default")
+  .call(d3.drag()
+    .on("start", (e,d) => { if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+    .on("drag",  (e,d) => { d.fx=e.x; d.fy=e.y; })
+    .on("end",   (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; })
+  );
+
+nodeSel.append("circle").attr("r", d => d.size);
+nodeSel.append("text").text(d => d.name.length > 14 ? d.name.slice(0,12)+"…" : d.name)
+  .attr("dy","1.8em").attr("font-size","9px");
+
+// Tooltip
+const tooltip = document.getElementById("tooltip");
+nodeSel
+  .on("mouseover", (e,d) => {
+    tooltip.innerHTML = `<strong>${d.name}</strong><br/><span style="color:#8b949e;font-size:10px">${d.tags.map(t=>"#"+t).join(" ")}</span>`;
+    tooltip.classList.add("visible");
+  })
+  .on("mousemove", e => {
+    const r = canvas.getBoundingClientRect();
+    tooltip.style.left = (e.clientX - r.left + 12) + "px";
+    tooltip.style.top  = (e.clientY - r.top  - 10) + "px";
+  })
+  .on("mouseout", () => tooltip.classList.remove("visible"))
+  .on("click", (e,d) => addChatMessage("system", `Opened note: "${d.name}" — Tags: ${d.tags.map(t=>"#"+t).join(" ")}`));
+
+sim.on("tick", () => {
+  linkSel
+    .attr("x1", d=>d.source.x).attr("y1", d=>d.source.y)
+    .attr("x2", d=>d.target.x).attr("y2", d=>d.target.y);
+  nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+function fitView() {
+  const bounds = g.node().getBBox();
+  const cw = canvas.clientWidth, ch = canvas.clientHeight;
+  const scale = 0.85 / Math.max(bounds.width/cw, bounds.height/ch);
+  const tx = cw/2 - scale*(bounds.x + bounds.width/2);
+  const ty = ch/2 - scale*(bounds.y + bounds.height/2);
+  svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(tx,ty).scale(scale));
+}
+
+// Wait for simulation to settle then fit
+setTimeout(fitView, 2200);
+
+/* ═══════════════════════════════════════════════════
+   HIGHLIGHT LOGIC
+═══════════════════════════════════════════════════ */
+function highlightNodes(vectorIds, graphIds) {
+  const vSet = new Set(vectorIds), gSet = new Set(graphIds);
+  const allHit = new Set([...vectorIds, ...graphIds]);
+
+  nodeSel.attr("class", d => {
+    if (vSet.has(d.id)) return "node vector";
+    if (gSet.has(d.id)) return "node graph-hit";
+    if (allHit.size > 0) return "node dimmed";
+    return "node default";
+  });
+
+  linkSel.attr("class", d => {
+    const s = d.source.id, t = d.target.id;
+    if ((allHit.has(s) && allHit.has(t))) return "link highlighted";
+    return "link";
+  });
+}
+
+function resetHighlights() {
+  nodeSel.attr("class","node default");
+  linkSel.attr("class","link");
+}
+
+document.getElementById("reset-btn").addEventListener("click", resetHighlights);
+document.getElementById("fit-btn").addEventListener("click", fitView);
+
+/* ═══════════════════════════════════════════════════
+   CHAT UI
+═══════════════════════════════════════════════════ */
+const msgContainer = document.getElementById("chat-messages");
+
+function addChatMessage(role, html, sources) {
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+
+  if (role !== "system") {
+    const label = document.createElement("div");
+    label.className = "msg-label";
+    label.textContent = role === "user" ? "You" : "Graph RAG";
+    el.appendChild(label);
+  }
+
+  const content = document.createElement("div");
+  content.className = "msg-content";
+  content.innerHTML = html;
+  el.appendChild(content);
+
+  if (sources && sources.length) {
+    const chips = document.createElement("div");
+    chips.className = "sources";
+    sources.forEach(s => {
+      const c = document.createElement("span");
+      c.className = "source-chip";
+      c.textContent = "📄 " + s;
+      chips.appendChild(c);
+    });
+    el.appendChild(chips);
+  }
+
+  msgContainer.appendChild(el);
+  msgContainer.scrollTop = msgContainer.scrollHeight;
+  return el;
+}
+
+function showLoading() {
+  const el = addChatMessage("assistant", '<span class="loading-dots">Searching your knowledge graph</span>');
+  return el;
+}
+
+/* ═══════════════════════════════════════════════════
+   MOCK QUERIES — pre-scripted demo responses
+═══════════════════════════════════════════════════ */
+const DEMO_QUERIES = [
+  {
+    query: "How does RAG use vector search and knowledge graphs together?",
+    delay: 1800,
+    vectorHits: [4, 8, 12, 6],
+    graphHits:  [2, 7, 11, 29, 41, 0],
+    answer: `<strong>RAG (Retrieval-Augmented Generation)</strong> combines two complementary strategies:<br><br>
+1. <strong>Vector Search</strong> — your query is embedded into a high-dimensional space using an embedding model. Notes with semantically similar embeddings are retrieved (shown in <span style="color:var(--node-vector)">pink</span>).<br><br>
+2. <strong>Graph Traversal</strong> — starting from those vector hits, BFS explores your <em>Obsidian wikilinks</em> to surface contextually connected notes (shown in <span style="color:var(--node-graph)">gold</span>).<br><br>
+Together they produce a richer context window than either technique alone — catching both semantic similarity <em>and</em> explicit knowledge relationships.`,
+    sources: ["RAG Systems", "Vector Databases", "Semantic Search", "Knowledge Graphs", "Embeddings"],
+  },
+  {
+    query: "What is the Zettelkasten method and how does it relate to my notes?",
+    delay: 1600,
+    vectorHits: [9, 13, 28, 24],
+    graphHits:  [3, 19, 38, 34, 39],
+    answer: `<strong>Zettelkasten</strong> is a knowledge-management method developed by sociologist Niklas Luhmann. Core ideas:<br><br>
+• Each note captures a <em>single idea</em> (atomic notes)<br>
+• Notes link to each other forming a web of knowledge<br>
+• Over time the graph becomes a <strong>"second brain"</strong><br><br>
+In your vault, the notes <strong>Zettelkasten Method</strong>, <strong>Note-Taking Systems</strong>, and <strong>Second Brain</strong> form a tightly connected cluster. Your <strong>Backlinks Strategy</strong> and <strong>Spaced Repetition</strong> notes extend this cluster toward active-recall learning techniques.`,
+    sources: ["Zettelkasten Method", "Second Brain", "Note-Taking Systems", "Backlinks Strategy"],
+  },
+  {
+    query: "Explain attention mechanisms in transformers",
+    delay: 2000,
+    vectorHits: [10, 5, 1, 25],
+    graphHits:  [0, 20, 30, 33, 8],
+    answer: `The <strong>Attention Mechanism</strong> lets a model weigh the importance of different tokens when processing a sequence:<br><br>
+<code>Attention(Q,K,V) = softmax(QKᵀ/√dₖ)V</code><br><br>
+• <strong>Queries (Q)</strong> represent what each token is "looking for"<br>
+• <strong>Keys (K)</strong> represent what each token "offers"<br>
+• <strong>Values (V)</strong> are the actual information passed forward<br><br>
+<strong>Multi-head attention</strong> runs this in parallel across <em>h</em> learned subspaces, letting the model simultaneously attend to different aspects (syntax, semantics, coreference). Your notes on <strong>BERT Model</strong> and <strong>Transformers</strong> contain detailed diagrams.`,
+    sources: ["Attention Mechanism", "Transformers", "Neural Networks", "BERT Model"],
+  },
+];
+
+let demoIndex = 0;
+
+async function runDemoQuery(q) {
+  addChatMessage("user", q.query);
+  const loading = showLoading();
+  resetHighlights();
+
+  await new Promise(r => setTimeout(r, q.delay));
+  loading.remove();
+
+  highlightNodes(q.vectorHits, q.graphHits);
+  addChatMessage("assistant", q.answer, q.sources);
+}
+
+document.getElementById("demo-query-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("demo-query-btn");
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  await runDemoQuery(DEMO_QUERIES[demoIndex % DEMO_QUERIES.length]);
+  demoIndex++;
+  btn.disabled = false;
+  btn.textContent = demoIndex < DEMO_QUERIES.length ? "▶ Next Demo Query" : "▶ Demo Query";
+});
+
+// Manual send
+const chatInput = document.getElementById("chat-input");
+const sendBtn   = document.getElementById("send-btn");
+
+sendBtn.addEventListener("click", handleSend);
+chatInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+});
+
+async function handleSend() {
+  const q = chatInput.value.trim();
+  if (!q) return;
+  chatInput.value = "";
+  addChatMessage("user", q);
+  const loading = showLoading();
+  await new Promise(r => setTimeout(r, 1400));
+  loading.remove();
+  addChatMessage("assistant",
+    `This is a <strong>mock demo</strong> — no live OpenAI connection. In production, your query would be embedded, vector-searched across <em>42 notes</em>, graph-traversed, and answered by GPT-4.1.<br><br>Try the <strong>▶ Demo Query</strong> button to see pre-scripted examples with graph highlighting.`
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   INIT WELCOME MESSAGE
+═══════════════════════════════════════════════════ */
+addChatMessage("assistant",
+  `Welcome to <strong>Graph RAG</strong>! This is a mock demo with <strong>42 simulated vault notes</strong> and <strong>87 connections</strong>.<br><br>
+  • Click <strong>▶ Demo Query</strong> to see 3 pre-scripted examples with live graph highlighting<br>
+  • Hover over graph nodes to see note titles<br>
+  • Drag nodes to rearrange the graph<br>
+  • Click <strong>Fit View</strong> to reset the viewport`
+);
+</script>
+</body>
+</html>
