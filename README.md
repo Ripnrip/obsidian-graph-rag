@@ -4,7 +4,7 @@
 
 ### GPU-accelerated knowledge graph visualization with Graph RAG
 
-<img src="docs/images/obsidian-graph-rag-ghibli.png" width="800" alt="Graph RAG for Obsidian Banner" style="border-radius: 16px;">
+<img src="docs/images/banner-reveal.svg" width="800" alt="Graph RAG for Obsidian Banner" style="border-radius: 16px;">
 
 <br />
 
